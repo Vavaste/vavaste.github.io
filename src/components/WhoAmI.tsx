@@ -10,7 +10,6 @@ export default function WhoAmI() {
   const [text, setText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [charIndex, setCharIndex] = useState(0);
-
   useEffect(() => {
     const currentRole = roles[roleIndex];
 
@@ -33,7 +32,7 @@ export default function WhoAmI() {
   }, [charIndex, deleting, roleIndex]);
 
   return (
-    <section className="flex flex-col items-center justify-center h-screen text-green-400 font-mono">
+    <section className="flex flex-col items-center justify-center text-green-400 font-mono">
       <h1 className="text-4xl font-bold">$~: whoami</h1>
       <p className="text-xl mt-4">
         {text}
