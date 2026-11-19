@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Do company websites still need a CMS?</title>
+  <meta name="description" content="Why I think most company websites no longer need a CMS, now that an LLM can write the pages">
+</head>
+<body>
+  <p><a href="../index.html">Home</a></p>
+
+  <h1>Do company websites still need a CMS?</h1>
+  <p><i>November 2026. This is an opinion piece.</i></p>
+
+  <p>
+    I don't think most company websites need a CMS anymore. A static site with an integration that uses an LLM
+    to write the pages is easier to maintain. That's true for developers, and I think it now holds for the people
+    who don't write code too, who were the reason we installed a CMS in the first place.
+  </p>
+
+  <h2>Why we used a CMS</h2>
+  <p>
+    Not for technical reasons: static sites were always simpler to host and harder to break. We picked a CMS
+    so that someone in marketing or HR could publish a news item or update a job posting without opening a
+    ticket for a developer, because they had no other way to edit the website.
+  </p>
+
+  <h2>What that interface costs</h2>
+  <p>
+    A server, a database, backups, core updates, plugin updates, security patches, and a theme that breaks
+    whenever one of those updates goes wrong. Someone has to own all of that for as long as the site lives,
+    and on a typical company site that someone is a developer.
+  </p>
+  <p>
+    Editors pay too. They have to learn an admin panel, remember which block to use, keep images at the right
+    size and avoid breaking the layout. In my experience most of them open it a few times a year, forget how it
+    works in between, and end up asking a developer anyway.
+  </p>
+
+  <h2>What changed</h2>
+  <p>
+    An LLM can now take a request in plain language ("add a news item about the new office, here are three
+    photos and the address") and turn it into a page that follows the site's templates and style. Editors don't
+    need an interface to the website anymore. Describing the change is enough.
+  </p>
+  <p>The flow I have in mind:</p>
+  <ol>
+    <li>someone describes the page they want, in a chat, a form or an email;</li>
+    <li>the LLM writes the page in the site's format and opens a pull request;</li>
+    <li>the change gets a preview link, and the person who asked checks it there;</li>
+    <li>a merge publishes it, and the static site is rebuilt and deployed.</li>
+  </ol>
+  <p>
+    Step 3 replaces the approval workflow of a CMS, and I'd argue it does the job better. Every change is
+    versioned, can be reviewed, and can be reverted with one click, and nothing reaches the live site until
+    someone approves it.
+  </p>
+  <p>
+    All that's left to maintain is a set of HTML or Markdown files, a template and a deploy pipeline. This site
+    is built exactly that way, and hosting it costs nothing.
+  </p>
+
+  <h2>Where I would still use a CMS</h2>
+  <p>When:</p>
+  <ul>
+    <li>many editors publish every day and need roles, permissions and an approval chain;</li>
+    <li>content changes several times an hour, as on a news site;</li>
+    <li>business teams manage structured data, such as a product catalog, rather than pages.</li>
+  </ul>
+  <p>
+    Most company websites are none of these. They have a few dozen pages, a news section updated a few times a
+    month and a careers page, and for them the CMS is mostly overhead.
+  </p>
+
+  <h2>What to watch out for</h2>
+  <p>
+    What the LLM produces is a draft. Someone has to read it before it goes live, especially claims about the
+    company, numbers, legal wording and anything about clients. The pull request makes that review quick, but
+    someone still has to do it.
+  </p>
+  <p>
+    The integration needs an owner as well. It's far less work than keeping a CMS patched, but templates evolve,
+    models change, and the prompts that describe the site's style need updating. You do that work when you
+    decide to improve the site, instead of whenever a plugin ships a security fix.
+  </p>
+
+  <p><a href="../index.html">Home</a></p>
+</body>
+</html>

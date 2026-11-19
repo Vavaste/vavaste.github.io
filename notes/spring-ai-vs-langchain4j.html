@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spring AI vs LangChain4j</title>
+  <meta name="description" content="Comparing Spring AI and LangChain4j for integrating LLMs in enterprise Java systems">
+</head>
+<body>
+  <p><a href="../index.html">Home</a></p>
+
+  <h1>Spring AI vs LangChain4j</h1>
+  <p>
+    Spring AI and LangChain4j are the two main frameworks for adding LLMs to Java applications.
+    This page compares them the way you would when picking one for a production system. Every example
+    implements the same use case in both: an assistant that answers questions about orders by reading internal data.
+  </p>
+  <p>
+    <b>Reference versions:</b> Spring AI 2.0.x, LangChain4j 1.2x. Last updated November 2026.
+    The examples only show what matters for the comparison, so check the documentation for the version you use.
+  </p>
+
+  <h2>Summary</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr><th></th><th>Spring AI</th><th>LangChain4j</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Maintained by</b></td>
+        <td>The Spring team, as part of the Spring ecosystem.</td>
+        <td>Independent open source project, with contributions from Red Hat (Quarkus) and Microsoft.</td>
+      </tr>
+      <tr>
+        <td><b>Framework coupling</b></td>
+        <td>Built for Spring Boot: auto-configuration, starters, properties.</td>
+        <td>Plain Java library. Integrations for Spring Boot, Quarkus, Helidon, Micronaut.</td>
+      </tr>
+      <tr>
+        <td><b>API style</b></td>
+        <td>Fluent <code>ChatClient</code>, behavior added through <i>advisors</i>.</td>
+        <td>Declarative <i>AI Services</i> (annotated interfaces) plus a low-level API.</td>
+      </tr>
+      <tr>
+        <td><b>Model selection</b></td>
+        <td>From configuration (<code>application.yml</code>), code depends on the abstraction.</td>
+        <td>Builder in code, or properties when using the Spring or Quarkus starter.</td>
+      </tr>
+      <tr>
+        <td><b>Tool calling</b></td>
+        <td><code>@Tool</code> and <code>@ToolParam</code> on Spring bean methods.</td>
+        <td><code>@Tool</code> and <code>@P</code> on methods of any object.</td>
+      </tr>
+      <tr>
+        <td><b>Conversation memory</b></td>
+        <td><code>ChatMemory</code> plus <code>MessageChatMemoryAdvisor</code>, conversation id passed as a parameter.</td>
+        <td><code>ChatMemoryProvider</code> plus <code>@MemoryId</code> on the AI Service method.</td>
+      </tr>
+      <tr>
+        <td><b>Structured output</b></td>
+        <td><code>.call().entity(MyRecord.class)</code></td>
+        <td>The AI Service method returns the type directly.</td>
+      </tr>
+      <tr>
+        <td><b>Streaming</b></td>
+        <td><code>Flux&lt;String&gt;</code> (Reactor).</td>
+        <td><code>TokenStream</code> with callbacks, or <code>Flux</code> with the Reactor module.</td>
+      </tr>
+      <tr>
+        <td><b>RAG</b></td>
+        <td><code>VectorStore</code>, retrieval advisors, ETL pipeline for documents.</td>
+        <td><code>EmbeddingStore</code>, <code>ContentRetriever</code>, <code>RetrievalAugmentor</code>, "Easy RAG" module.</td>
+      </tr>
+      <tr>
+        <td><b>Observability</b></td>
+        <td>Built-in Micrometer: observations for model calls, tools and vector stores.</td>
+        <td><code>ChatModelListener</code>. Tracing and metrics come from the framework integration (e.g. Quarkus with OpenTelemetry).</td>
+      </tr>
+      <tr>
+        <td><b>MCP</b></td>
+        <td>Client and server with Boot starters. <code>@McpTool</code>, <code>@McpResource</code>, <code>@McpPrompt</code> annotations in core since 2.0.</td>
+        <td>Client (<code>langchain4j-mcp</code> module, still beta). For servers: community module, MCP Java SDK or Quarkus MCP Server.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>1. Simple call</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr><th width="50%">Spring AI</th><th width="50%">LangChain4j</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td valign="top">
+<pre><code># application.yml
+spring:
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o-mini</code></pre>
+<pre><code>@RestController
+class HelloController {
+
+    private final ChatClient chatClient;
+
+    HelloController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    @GetMapping("/hello")
+    String hello(@RequestParam String q) {
+        return chatClient.prompt()
+                .user(q)
+                .call()
+                .content();
+    }
+}</code></pre>
+        </td>
+        <td valign="top">
+<pre><code>ChatModel model = OpenAiChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o-mini")
+        .build();
+
+String answer = model.chat("Hello!");</code></pre>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Spring AI starts from configuration and gives you a ready-made bean. LangChain4j starts from code:
+    you build the model yourself with no container involved, and the configuration is yours to manage
+    unless you hand it to the framework starter.
+  </p>
+
+  <h2>2. Assistant with tools and memory</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr><th width="50%">Spring AI</th><th width="50%">LangChain4j</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td valign="top">
+<pre><code>@Component
+class OrderTools {
+
+    private final OrderRepository orders;
+
+    OrderTools(OrderRepository orders) {
+        this.orders = orders;
+    }
+
+    @Tool(description = "Returns the status of an order")
+    String orderStatus(
+            @ToolParam(description = "Order id") String orderId) {
+        return orders.findStatus(orderId);
+    }
+}</code></pre>
+<pre><code>@RestController
+class AssistantController {
+
+    private final ChatClient chatClient;
+
+    AssistantController(ChatClient.Builder builder,
+                        OrderTools tools,
+                        ChatMemory memory) {
+        this.chatClient = builder
+                .defaultSystem("You are an order support assistant.")
+                .defaultTools(tools)
+                .defaultAdvisors(
+                        MessageChatMemoryAdvisor.builder(memory).build())
+                .build();
+    }
+
+    @PostMapping("/chat/{userId}")
+    String chat(@PathVariable String userId,
+                @RequestBody String message) {
+        return chatClient.prompt()
+                .user(message)
+                .advisors(a -&gt; a.param(
+                        ChatMemory.CONVERSATION_ID, userId))
+                .call()
+                .content();
+    }
+}</code></pre>
+        </td>
+        <td valign="top">
+<pre><code>class OrderTools {
+
+    private final OrderRepository orders;
+
+    OrderTools(OrderRepository orders) {
+        this.orders = orders;
+    }
+
+    @Tool("Returns the status of an order")
+    String orderStatus(@P("Order id") String orderId) {
+        return orders.findStatus(orderId);
+    }
+}</code></pre>
+<pre><code>interface Assistant {
+
+    @SystemMessage("You are an order support assistant.")
+    String chat(@MemoryId String userId,
+                @UserMessage String message);
+}</code></pre>
+<pre><code>Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .tools(new OrderTools(orderRepository))
+        .chatMemoryProvider(id -&gt;
+                MessageWindowChatMemory.withMaxMessages(20))
+        .build();
+
+String reply = assistant.chat("user-42", "Where is my order 1234?");</code></pre>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    In LangChain4j the contract is a Java interface. System prompt, memory and return type sit in the
+    method signature, and the rest of the code only knows about <code>Assistant</code>.
+    Spring AI builds the same behavior on the <code>ChatClient</code> with defaults and advisors,
+    much like you would configure a <code>RestClient</code> or <code>WebClient</code>.
+  </p>
+
+  <h2>3. Structured output</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr><th width="50%">Spring AI</th><th width="50%">LangChain4j</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td valign="top">
+<pre><code>record OrderSummary(String orderId,
+                    String status,
+                    List&lt;String&gt; issues) {}
+
+OrderSummary summary = chatClient.prompt()
+        .user("Summarize this ticket: " + ticket)
+        .call()
+        .entity(OrderSummary.class);</code></pre>
+        </td>
+        <td valign="top">
+<pre><code>record OrderSummary(String orderId,
+                    String status,
+                    List&lt;String&gt; issues) {}
+
+interface TicketAnalyzer {
+
+    @UserMessage("Summarize this ticket: {{ticket}}")
+    OrderSummary summarize(@V("ticket") String ticket);
+}</code></pre>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. Streaming</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr><th width="50%">Spring AI</th><th width="50%">LangChain4j</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td valign="top">
+<pre><code>@GetMapping(value = "/stream",
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+Flux&lt;String&gt; stream(@RequestParam String q) {
+    return chatClient.prompt()
+            .user(q)
+            .stream()
+            .content();
+}</code></pre>
+        </td>
+        <td valign="top">
+<pre><code>interface StreamingAssistant {
+    TokenStream chat(String message);
+}
+
+StreamingAssistant assistant = AiServices
+        .builder(StreamingAssistant.class)
+        .streamingChatModel(streamingModel)
+        .build();
+
+assistant.chat("Hello!")
+        .onPartialResponse(System.out::print)
+        .onCompleteResponse(r -&gt; System.out.println())
+        .onError(Throwable::printStackTrace)
+        .start();</code></pre>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. MCP</h2>
+  <table border="1" cellpadding="6">
+    <thead>
+      <tr>
+        <th width="50%">Spring AI: exposing tools as an MCP server</th>
+        <th width="50%">LangChain4j: consuming an MCP server as a client</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td valign="top">
+<pre><code>// starter: spring-ai-starter-mcp-server-webmvc
+@Component
+class OrderMcpTools {
+
+    @McpTool(name = "order_status",
+             description = "Returns the status of an order")
+    String orderStatus(
+            @McpToolParam(description = "Order id",
+                          required = true) String orderId) {
+        return orders.findStatus(orderId);
+    }
+}</code></pre>
+        </td>
+        <td valign="top">
+<pre><code>McpTransport transport = new StreamableHttpMcpTransport.Builder()
+        .url("http://localhost:8080/mcp")
+        .build();
+
+McpClient mcpClient = new DefaultMcpClient.Builder()
+        .transport(transport)
+        .build();
+
+ToolProvider toolProvider = McpToolProvider.builder()
+        .mcpClients(mcpClient)
+        .build();
+
+Assistant assistant = AiServices.builder(Assistant.class)
+        .chatModel(model)
+        .toolProvider(toolProvider)
+        .build();</code></pre>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    MCP is where the two differ most. The Spring team contributed the official MCP Java SDK, and Spring AI
+    supports both the server and the client side. LangChain4j works well as a client, but to write a server
+    you are better off with the MCP Java SDK or Quarkus.
+  </p>
+  <p>
+    LangChain4j 1.19 removed the SSE transport (<code>HttpMcpTransport</code>), so use Streamable HTTP or stdio.
+  </p>
+
+  <h2>When to choose which</h2>
+  <h3>Spring AI if</h3>
+  <ul>
+    <li>the system is already Spring Boot and you want configuration, security and observability consistent with the rest;</li>
+    <li>you want Micrometer metrics and tracing with no extra work;</li>
+    <li>you need to expose existing services as an MCP server.</li>
+  </ul>
+  <h3>LangChain4j if</h3>
+  <ul>
+    <li>you are not on Spring (Quarkus, Jakarta EE, plain Java, shared libraries);</li>
+    <li>you want the rest of the code to depend on a declarative interface rather than on the framework;</li>
+    <li>you need a wide catalog of model and embedding store integrations.</li>
+  </ul>
+  <p>
+    Whichever you pick, keep the LLM behind an interface you own (a port, in hexagonal architecture terms).
+    Then switching framework or model only touches the code behind that interface.
+  </p>
+
+  <h2>Production concerns</h2>
+
+  <h3>Does the provider abstraction hold up?</h3>
+  <p>
+    For the code, mostly yes. In both frameworks, switching from one provider to another is a dependency and
+    a configuration change, and the tool and structured output code stays the same.
+  </p>
+  <p>
+    The behavior does not carry over as easily. Models differ in how reliably they pick the right tool, whether
+    they call several tools in one turn, and whether they support a JSON schema natively or only follow format
+    instructions in the prompt. Provider-specific options (such as <code>OpenAiChatOptions</code> in Spring AI)
+    also leak the provider back into your code as soon as you use them. Treat a model change like a dependency
+    upgrade: run the same test suite against the new model before switching.
+  </p>
+
+  <h3>How do you pass the user identity to a tool?</h3>
+  <p>
+    The rule that matters in both frameworks: the model must never decide who the user is. Do not expose a
+    <code>userId</code> parameter that the LLM fills in. The tool reads the identity from context the server controls.
+  </p>
+  <p>
+    In Spring AI you pass that context with <code>.toolContext(Map.of("userId", userId))</code> on the prompt,
+    and the tool method receives it as a <code>ToolContext</code> parameter that is not shown to the model.
+    In a blocking call the tool also runs on the request thread, so <code>SecurityContextHolder</code> works,
+    but do not count on it with streaming.
+    In LangChain4j a tool parameter annotated with <code>@ToolMemoryId</code> receives the same id passed with
+    <code>@MemoryId</code>, which you can use as the user or session key.
+  </p>
+  <p>
+    For MCP servers the identity travels as an OAuth token, as defined by the MCP authorization spec. A Spring AI
+    MCP server can be secured as an OAuth2 resource server with Spring Security. The client has to forward a token
+    that represents the user, not a technical account with broader permissions.
+  </p>
+
+  <h3>Where do retries, fallbacks and circuit breakers go?</h3>
+  <p>
+    Both frameworks handle basic retries on the model call. Spring AI uses Spring Retry, configured through the
+    <code>spring.ai.retry.*</code> properties. LangChain4j model builders have a <code>maxRetries</code> option.
+  </p>
+  <p>
+    Neither gives you a fallback to a different model out of the box. Put it in the adapter behind your own
+    interface: with Resilience4j in Spring (a <code>@CircuitBreaker</code> whose fallback method calls a second
+    <code>ChatClient</code> built on another model), or with the SmallRye Fault Tolerance annotations
+    (<code>@Timeout</code>, <code>@Retry</code>, <code>@Fallback</code>) on Quarkus AI Services. Keeping this logic
+    in the adapter means the rest of the application never knows which model actually answered.
+  </p>
+
+  <h3>How do you test it?</h3>
+  <p>Split the tests by what is deterministic and what is not.</p>
+  <ul>
+    <li>
+      Tools are plain Java methods: unit test them directly, without a model.
+    </li>
+    <li>
+      The code around the model (controllers, services, error handling) is tested with a mocked
+      <code>ChatModel</code>, which is an interface in both frameworks.
+    </li>
+    <li>
+      For integration tests, run a small local model with Testcontainers and Ollama instead of calling a paid API.
+    </li>
+    <li>
+      The answers themselves are checked with evaluations: a fixed set of questions with expected outcomes,
+      judged by assertions or by a second model. Spring AI ships evaluators for this (<code>RelevancyEvaluator</code>,
+      <code>FactCheckingEvaluator</code>). With LangChain4j you write the same step yourself.
+      Run evaluations on every prompt or model change, not on every commit: they are slow and cost money.
+    </li>
+  </ul>
+
+  <h2>Sources</h2>
+  <ul>
+    <li><a href="https://docs.spring.io/spring-ai/reference/" target="_blank" rel="noopener noreferrer">Spring AI documentation</a></li>
+    <li><a href="https://docs.langchain4j.dev/" target="_blank" rel="noopener noreferrer">LangChain4j documentation</a></li>
+    <li><a href="https://docs.langchain4j.dev/tutorials/mcp" target="_blank" rel="noopener noreferrer">LangChain4j and MCP</a></li>
+    <li><a href="https://docs.spring.io/spring-ai/reference/api/mcp/mcp-annotations-server.html" target="_blank" rel="noopener noreferrer">Spring AI MCP server annotations</a></li>
+    <li><a href="https://spring.io/blog/2026/06/12/spring-ai-2-0-0-GA-available-now/" target="_blank" rel="noopener noreferrer">Spring AI 2.0.0 GA</a></li>
+    <li><a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer">Model Context Protocol</a></li>
+  </ul>
+
+  <p><a href="../index.html">Home</a></p>
+</body>
+</html>
